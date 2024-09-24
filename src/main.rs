@@ -45,26 +45,23 @@ async fn main() {
             screen_width() / 8.0
         };
 
-        let current_temp_index = if is_mouse_button_pressed(MouseButton::Left) {
+        if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = mouse_position();
             let x = x / square_size;
             let y = y / square_size;
             let x = x.floor() as usize;
             let y = y.floor() as usize;
 
-            x + y * 8
-        } else {
-            current_index
-        };
-
-        let moves = if selecting {
-            game.move_piece(current_index, current_temp_index);
-            Vec::new()
-        } else {
             
-            game.get_moves_list(current_index)
-        };
-
+            current_index = if selecting {
+                game.move_piece(current_index, x + y * 8);
+                usize::MAX
+            } else {
+                x + y * 8
+            }
+        }
+            
+        let moves = game.get_moves_list(current_index);
 
         selecting = !moves.is_empty();
 
