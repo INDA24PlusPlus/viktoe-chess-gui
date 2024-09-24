@@ -14,18 +14,18 @@ struct Square {
 
 #[macroquad::main("Chess")]
 async fn main() {
-    let white_king = load_texture("../img/Chess_klt45.svg.png").await.unwrap();
-    let black_king = load_texture("../img/Chess_kdt45.svg.png").await.unwrap();
-    let white_queen = load_texture("../img/Chess_qlt45.svg.png").await.unwrap();
-    let black_queen = load_texture("../img/Chess_qdt45.svg.png").await.unwrap();
-    let white_bishop = load_texture("../img/Chess_blt45.svg.png").await.unwrap();
-    let black_bishop = load_texture("../img/Chess_bdt45.svg.png").await.unwrap();
-    let white_knight = load_texture("../img/Chess_nlt45.svg.png").await.unwrap();
-    let black_knight = load_texture("../img/Chess_ndt45.svg.png").await.unwrap();
-    let white_rook = load_texture("../img/Chess_rlt45.svg.png").await.unwrap();
-    let black_rook = load_texture("../img/Chess_rdt45.svg.png").await.unwrap();
-    let white_pawn = load_texture("../img/Chess_plt45.svg.png").await.unwrap();
-    let black_pawn = load_texture("../img/Chess_pdt45.svg.png").await.unwrap();
+    let white_king = load_texture("./img/Chess_klt45.svg.png").await.unwrap();
+    let black_king = load_texture("./img/Chess_kdt45.svg.png").await.unwrap();
+    let white_queen = load_texture("./img/Chess_qlt45.svg.png").await.unwrap();
+    let black_queen = load_texture("./img/Chess_qdt45.svg.png").await.unwrap();
+    let white_bishop = load_texture("./img/Chess_blt45.svg.png").await.unwrap();
+    let black_bishop = load_texture("./img/Chess_bdt45.svg.png").await.unwrap();
+    let white_knight = load_texture("./img/Chess_nlt45.svg.png").await.unwrap();
+    let black_knight = load_texture("./img/Chess_ndt45.svg.png").await.unwrap();
+    let white_rook = load_texture("./img/Chess_rlt45.svg.png").await.unwrap();
+    let black_rook = load_texture("./img/Chess_rdt45.svg.png").await.unwrap();
+    let white_pawn = load_texture("./img/Chess_plt45.svg.png").await.unwrap();
+    let black_pawn = load_texture("./img/Chess_pdt45.svg.png").await.unwrap();
 
     let mut game = ChessBoard::new();
 
@@ -48,7 +48,7 @@ async fn main() {
         clear_background(BLACK);
 
         for square in squares {
-            let color = if square.index % 2 == 0 {
+            let color = if (square.index + square.y) % 2 == 0 {
                 WHITE
             } else {
                 BLACK
@@ -70,11 +70,15 @@ async fn main() {
                 Empty => None,
             };
 
+            let piece_params = DrawTextureParams {dest_size: Some(vec2(square_size, square_size)), ..Default::default()};
+
             draw_rectangle(square.x as f32 * square_size, square.y as f32 * square_size, square_size, square_size, color);
 
             if let Some(piece) = piece {
-                draw_texture(piece, square.x as f32 * square_size, square.y as f32 * square_size, WHITE);
+                draw_texture_ex(piece, square.x as f32 * square_size, square.y as f32 * square_size, WHITE, piece_params);
             }
         }
+
+        next_frame().await
     }
 }
