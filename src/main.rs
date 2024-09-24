@@ -34,6 +34,7 @@ async fn main() {
 
 
     let mut current_index = 0;
+    let mut selecting = false;
 
     loop {
         clear_background(BLACK);
@@ -44,17 +45,28 @@ async fn main() {
             screen_width() / 8.0
         };
 
-        if is_mouse_button_pressed(MouseButton::Left) {
+        let current_temp_index = if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = mouse_position();
             let x = x / square_size;
             let y = y / square_size;
             let x = x.floor() as usize;
             let y = y.floor() as usize;
 
-            current_index = x + y * 8;
-        }
+            x + y * 8
+        } else {
+            current_index
+        };
 
-        let moves = game.get_moves_list(current_index);
+        let moves = if selecting {
+            game.move_piece(current_index, current_temp_index);
+            Vec::new()
+        } else {
+            
+            game.get_moves_list(current_index)
+        };
+
+
+        selecting = !moves.is_empty();
 
         for square in squares {
             let color = if (square.index + square.y) % 2 == 0 {
