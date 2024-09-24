@@ -77,7 +77,7 @@ async fn main() {
             draw_rectangle(square.x as f32 * square_size, square.y as f32 * square_size, square_size, square_size, color);
 
             if let Some(piece) = piece {
-                draw_texture_ex(piece, square.x as f32 * square_size, square.y as f32 * square_size, WHITE, piece_params);
+                draw_texture_ex(piece, square.x as f32 * square_size, square.y as f32 * square_size, color, piece_params);
             }
         }
 
