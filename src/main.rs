@@ -16,18 +16,12 @@ async fn main() {
     let ceris = Color::from_hex(0xE83D84);
     let green = Color::from_hex(0x17c27b);
 
-    let white_king = load_texture("./img/Chess_klt45.svg.png").await.unwrap();
-    let black_king = load_texture("./img/Chess_kdt45.svg.png").await.unwrap();
-    let white_queen = load_texture("./img/Chess_qlt45.svg.png").await.unwrap();
-    let black_queen = load_texture("./img/Chess_qdt45.svg.png").await.unwrap();
-    let white_bishop = load_texture("./img/Chess_blt45.svg.png").await.unwrap();
-    let black_bishop = load_texture("./img/Chess_bdt45.svg.png").await.unwrap();
-    let white_knight = load_texture("./img/Chess_nlt45.svg.png").await.unwrap();
-    let black_knight = load_texture("./img/Chess_ndt45.svg.png").await.unwrap();
-    let white_rook = load_texture("./img/Chess_rlt45.svg.png").await.unwrap();
-    let black_rook = load_texture("./img/Chess_rdt45.svg.png").await.unwrap();
-    let white_pawn = load_texture("./img/Chess_plt45.svg.png").await.unwrap();
-    let black_pawn = load_texture("./img/Chess_pdt45.svg.png").await.unwrap();
+    let king = load_texture("./img/Chess_klt45.svg.png").await.unwrap();
+    let queen = load_texture("./img/Chess_qlt45.svg.png").await.unwrap();
+    let bishop = load_texture("./img/Chess_blt45.svg.png").await.unwrap();
+    let knight = load_texture("./img/Chess_nlt45.svg.png").await.unwrap();
+    let rook = load_texture("./img/Chess_rlt45.svg.png").await.unwrap();
+    let pawn = load_texture("./img/Chess_plt45.svg.png").await.unwrap();
 
     let mut game = ChessBoard::new();
 
@@ -58,18 +52,18 @@ async fn main() {
             };
 
             let piece = match game.piece_at(square.index) {
-                WhiteKing => Some(&white_king),
-                BlackKing => Some(&black_king),
-                WhiteQueen => Some(&white_queen),
-                BlackQueen => Some(&black_queen),
-                WhiteBishop => Some(&white_bishop),
-                BlackBishop => Some(&black_bishop),
-                WhiteKnight => Some(&white_knight),
-                BlackKnight => Some(&black_knight),
-                WhiteRook => Some(&white_rook),
-                BlackRook => Some(&black_rook),
-                WhitePawn => Some(&white_pawn),
-                BlackPawn => Some(&black_pawn),
+                WhiteKing => Some((&king, ceris)),
+                BlackKing => Some((&king, green)),
+                WhiteQueen => Some((&queen, ceris)),
+                BlackQueen => Some((&queen, green)),
+                WhiteBishop => Some((&bishop, ceris)),
+                BlackBishop => Some((&bishop, green)),
+                WhiteKnight => Some((&knight, ceris)),
+                BlackKnight => Some((&knight, green)),
+                WhiteRook => Some((&rook, ceris)),
+                BlackRook => Some((&rook, green)),
+                WhitePawn => Some((&pawn, ceris)),
+                BlackPawn => Some((&pawn, green)),
                 Empty => None,
             };
 
@@ -78,7 +72,7 @@ async fn main() {
             draw_rectangle(square.x as f32 * square_size, square.y as f32 * square_size, square_size, square_size, color);
 
             if let Some(piece) = piece {
-                draw_texture_ex(piece, square.x as f32 * square_size, square.y as f32 * square_size, color, piece_params);
+                draw_texture_ex(piece.0, square.x as f32 * square_size, square.y as f32 * square_size, piece.1, piece_params);
             }
         }
 
