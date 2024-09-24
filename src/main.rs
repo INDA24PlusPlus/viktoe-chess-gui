@@ -4,7 +4,6 @@ use macroquad::{math, prelude::*};
 const SCREEN_HEIGHT: usize = 600;
 const SCREEN_WIDTH: usize = 600;
 
-
 #[derive(Debug, Default, Clone, Copy)]
 struct Square {
     index: usize,
@@ -14,6 +13,9 @@ struct Square {
 
 #[macroquad::main("Chess")]
 async fn main() {
+    let ceris = Color::from_hex(0xE83D84);
+    let green = Color::from_hex(0x17c27b);
+
     let white_king = load_texture("./img/Chess_klt45.svg.png").await.unwrap();
     let black_king = load_texture("./img/Chess_kdt45.svg.png").await.unwrap();
     let white_queen = load_texture("./img/Chess_qlt45.svg.png").await.unwrap();
@@ -49,9 +51,9 @@ async fn main() {
 
         for square in squares {
             let color = if (square.index + square.y) % 2 == 0 {
-                WHITE
+                ceris
             } else {
-                BLACK
+                green
             };
 
             let piece = match game.piece_at(square.index) {
