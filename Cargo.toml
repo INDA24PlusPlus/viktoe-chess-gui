@@ -1,0 +1,8 @@
+[package]
+name = "viktoe-chess-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+davbjor-chess = { git = "https://github.com/INDA24PlusPlus/davbjor-chess.git" }
+macroquad = "0.4.13"
