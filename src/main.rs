@@ -1,8 +1,7 @@
-use davbjor_chess::{self, ChessBoard, PieceType::*};
-use macroquad::{math, prelude::*};
+use std::usize;
 
-const SCREEN_HEIGHT: usize = 600;
-const SCREEN_WIDTH: usize = 600;
+use davbjor_chess::{self, ChessBoard, PieceType::*};
+use macroquad::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Square {
@@ -34,6 +33,7 @@ async fn main() {
     }
 
 
+    let mut current_index = 0;
 
     loop {
         clear_background(BLACK);
@@ -43,6 +43,18 @@ async fn main() {
         } else {
             screen_width() / 8.0
         };
+
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let (x, y) = mouse_position();
+            let x = x / square_size;
+            let y = y / square_size;
+            let x = x.floor() as usize;
+            let y = y.floor() as usize;
+
+            current_index = x + y * 8;
+        }
+
+        let moves = game.get_moves_list(current_index);
 
         for square in squares {
             let color = if (square.index + square.y) % 2 == 0 {
@@ -74,7 +86,18 @@ async fn main() {
             if let Some(piece) = piece {
                 draw_texture_ex(piece.0, square.x as f32 * square_size, square.y as f32 * square_size, piece.1, piece_params);
             }
+
+            let highlight_color = if color == ceris {
+                green
+            } else {
+                ceris
+            };
+
+            if moves.contains(&square.index) {
+                draw_circle(square.x as f32 * square_size + square_size / 2.0, square.y as f32 * square_size + square_size / 2.0, square_size / 5.0, highlight_color);
+            }
         }
+
 
         next_frame().await
     }
