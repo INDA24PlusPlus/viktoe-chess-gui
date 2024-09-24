@@ -1,6 +1,9 @@
 use std::usize;
 
-use davbjor_chess::{self, ChessBoard, PieceType::*};
+use davbjor_chess::{
+    self, ChessBoard, GameResult,
+    PieceType::{self, *},
+};
 use macroquad::prelude::*;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -32,11 +35,12 @@ async fn main() {
         square.y = index / 8;
     }
 
+    let mut is_promote = false;
 
     let mut current_index = 0;
     let mut selecting = false;
 
-    loop {
+    while game.game_result == GameResult::Ongoing {
         clear_background(BLACK);
 
         let square_size = if screen_width() > screen_height() {
@@ -52,15 +56,55 @@ async fn main() {
             let x = x.floor() as usize;
             let y = y.floor() as usize;
 
-            
             current_index = if selecting {
-                game.move_piece(current_index, x + y * 8);
+                is_promote = !game.move_piece(current_index, x + y * 8).unwrap_or(true);
+                usize::MAX
+            } else if is_promote
+                && y as f32 > screen_height() / 2.0 - square_size / 2.0
+                && (y as f32) < screen_height() / 2.0 + square_size / 2.0
+                && (x as f32) > screen_width() / 2.0 - square_size * 2.0
+            {
+                let piece = if (x as f32) < screen_width() / 2.0 - square_size {
+                    if game.whites_turn {
+                        Some(PieceType::WhiteQueen)
+                    } else {
+                        Some(PieceType::BlackQueen)
+                    }
+                } else if (x as f32) < screen_width() / 2.0 + square_size {
+                    if game.whites_turn {
+                        Some(PieceType::WhiteBishop)
+                    } else {
+                        Some(PieceType::BlackBishop)
+                    }
+                } else if (x as f32) < screen_width() / 2.0 + square_size * 2.0 {
+                    if game.whites_turn {
+                        Some(PieceType::WhiteKnight)
+                    } else {
+                        Some(PieceType::BlackKnight)
+                    }
+                } else if (x as f32) < screen_width() / 2.0 + square_size * 3.0 {
+                    if game.whites_turn {
+                        Some(PieceType::WhiteRook)
+                    } else {
+                        Some(PieceType::BlackRook)
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(piece) = piece {
+                    game.handle_promotion(current_index, x + y * 8, piece)
+                        .unwrap();
+                }
+
+                is_promote = false;
+
                 usize::MAX
             } else {
                 x + y * 8
             }
         }
-            
+
         let moves = game.get_moves_list(current_index);
 
         selecting = !moves.is_empty();
@@ -88,26 +132,92 @@ async fn main() {
                 Empty => None,
             };
 
-            let piece_params = DrawTextureParams {dest_size: Some(vec2(square_size, square_size)), ..Default::default()};
-
-            draw_rectangle(square.x as f32 * square_size, square.y as f32 * square_size, square_size, square_size, color);
-
-            if let Some(piece) = piece {
-                draw_texture_ex(piece.0, square.x as f32 * square_size, square.y as f32 * square_size, piece.1, piece_params);
-            }
-
-            let highlight_color = if color == ceris {
-                green
-            } else {
-                ceris
+            let piece_params = DrawTextureParams {
+                dest_size: Some(vec2(square_size, square_size)),
+                ..Default::default()
             };
 
+            draw_rectangle(
+                square.x as f32 * square_size,
+                square.y as f32 * square_size,
+                square_size,
+                square_size,
+                color,
+            );
+
+            if let Some(piece) = piece {
+                draw_texture_ex(
+                    piece.0,
+                    square.x as f32 * square_size,
+                    square.y as f32 * square_size,
+                    piece.1,
+                    piece_params.clone(),
+                );
+            }
+
+            let highlight_color = if color == ceris { green } else { ceris };
+
             if moves.contains(&square.index) {
-                draw_circle(square.x as f32 * square_size + square_size / 2.0, square.y as f32 * square_size + square_size / 2.0, square_size / 5.0, highlight_color);
+                draw_circle(
+                    square.x as f32 * square_size + square_size / 2.0,
+                    square.y as f32 * square_size + square_size / 2.0,
+                    square_size / 5.0,
+                    highlight_color,
+                );
+            }
+
+            if is_promote {
+                let height_start = screen_height() / 2.0 - square_size / 2.0;
+                let width_start = screen_width() / 2.0 - 2.0 * square_size;
+                draw_rectangle(
+                    width_start,
+                    height_start,
+                    4.0 * square_size,
+                    square_size,
+                    BLACK,
+                );
+                let color = if game.whites_turn { ceris } else { green };
+
+                draw_texture_ex(
+                    &queen,
+                    width_start,
+                    height_start,
+                    color,
+                    piece_params.clone(),
+                );
+                draw_texture_ex(
+                    &bishop,
+                    width_start,
+                    height_start,
+                    color,
+                    piece_params.clone(),
+                );
+                draw_texture_ex(
+                    &knight,
+                    width_start,
+                    height_start,
+                    color,
+                    piece_params.clone(),
+                );
+                draw_texture_ex(
+                    &rook,
+                    width_start,
+                    height_start,
+                    color,
+                    piece_params.clone(),
+                );
             }
         }
 
-
-        next_frame().await
+        next_frame().await;
     }
+
+    draw_text(
+        "Game Over",
+        screen_width() / 2.0,
+        screen_height() / 2.0,
+        30.0,
+        BLACK,
+    );
+    next_frame().await;
 }
