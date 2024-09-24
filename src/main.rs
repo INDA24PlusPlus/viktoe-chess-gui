@@ -39,15 +39,16 @@ async fn main() {
         square.y = index / 8;
     }
 
-    let square_size = if screen_width() > screen_height() {
-        screen_height() / 8.0
-    } else {
-        screen_width() / 8.0
-    };
 
 
     loop {
         clear_background(BLACK);
+
+        let square_size = if screen_width() > screen_height() {
+            screen_height() / 8.0
+        } else {
+            screen_width() / 8.0
+        };
 
         for square in squares {
             let color = if (square.index + square.y) % 2 == 0 {
