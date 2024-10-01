@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 davbjor-chess = { git = "https://github.com/INDA24PlusPlus/davbjor-chess.git" }
+chess-networking = { git = "https://github.com/INDA24PlusPlus/chess-networking.git" }
 macroquad = "0.4.13"

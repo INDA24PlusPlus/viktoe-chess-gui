@@ -1,3 +1,6 @@
+use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, usize};
+
+use chess_networking::{Ack, Move, PromotionPiece, Start};
 use davbjor_chess::{
     self, ChessBoard, GameResult,
     PieceType::{self, *},
@@ -13,6 +16,27 @@ struct Square {
 
 #[macroquad::main("Chess")]
 async fn main() {
+    let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+
+    let (mut socket, start) = if let Ok((mut socket, _addr)) = listener.accept() {
+        let mut buf = [0; 128];
+        let amount = socket.read(&mut buf).unwrap();
+
+        (socket, Start::try_from(&buf[0..amount]).unwrap())
+    } else {
+        todo!()
+    };
+
+    let start_res: Vec<u8> = Start {
+        is_white: !start.is_white,
+        name: None,
+        fen: None,
+        time: None,
+        inc: None
+    }.try_into().unwrap();
+
+    socket.write_all(&start_res).unwrap();
+
     let ceris = Color::from_hex(0xE83D84);
     let green = Color::from_hex(0x17c27b);
 
@@ -25,7 +49,7 @@ async fn main() {
 
     let mut game = ChessBoard::new();
 
-    let local_turn_is_white = true;
+    let local_turn_is_white = !start.is_white;
 
     let mut squares = [Square::default(); 64];
 
@@ -37,8 +61,7 @@ async fn main() {
 
     let mut is_promote = false;
 
-    let mut current_index = 0;
-    let mut selecting = false;
+    let mut current_index: Option<usize> = None;
 
     while game.game_result == GameResult::Ongoing {
         clear_background(BLACK);
@@ -50,14 +73,26 @@ async fn main() {
         };
 
         if game.whites_turn == local_turn_is_white && is_mouse_button_pressed(MouseButton::Left) {
-            handle_input(&mut game, square_size, &mut current_index, &mut selecting, &mut is_promote);
+            handle_input(&mut game, square_size, &mut current_index, &mut is_promote, &mut socket);
         } else {
+            let mut buf = [0; 128];
+            let amount = socket.read(&mut buf).unwrap();
 
+            let performed_move: Move = buf[0..amount].try_into().unwrap();
+            let from = performed_move.from.0 + performed_move.from.1 * 8;
+            let to = performed_move.to.0 + performed_move.to.1 * 8;
+
+            game.move_piece(from.into(), to.into()).unwrap();
+
+            let ack: Vec<u8> = Ack {
+                ok: true,
+                end_state: None
+            }.try_into().unwrap();
+
+            socket.write_all(&ack).unwrap();
         }
 
-        let moves = game.get_moves_list(current_index);
-
-        selecting = !moves.is_empty();
+        let moves = game.get_moves_list(current_index.unwrap());
 
         for square in squares {
             display_square(
@@ -94,47 +129,98 @@ async fn main() {
     next_frame().await;
 }
 
-fn handle_input(game: &mut ChessBoard, square_size: f32, current_index: &mut usize, selecting: &mut bool, is_promote: &mut bool) {
+fn select(square_size: f32) -> (usize, usize) {
     let (x, y) = mouse_position();
-    let x = x / square_size;
-    let y = y / square_size;
-    let x = x.floor() as usize;
-    let y = y.floor() as usize;
+    let x = (x / square_size).floor() as usize;
+    let y = (y / square_size).floor() as usize;
 
+    (x, y)
+}
 
-    *current_index = if *selecting {
-        *is_promote = handle_move(game, *current_index, x + y * 8);
+fn net_move(from: (u8, u8), to: (u8, u8), promotion: Option<PieceType>, socket: &mut TcpStream) -> bool {
+    let promotion = if let Some(piece) = promotion {
+        match piece {
+            WhiteQueen | BlackQueen => Some(PromotionPiece::Queen),
+            WhiteBishop | BlackBishop => Some(PromotionPiece::Bishop),
+            WhiteKnight | BlackKnight => Some(PromotionPiece::Knight),
+            WhiteRook | BlackRook => Some(PromotionPiece::Rook),
+            _ => None,
+        }
+    } else {
+        None
+    };
 
-        while *is_promote {
-            let (x, y) = mouse_position();
-            let x = x / square_size;
-            let y = y / square_size;
-            let x = x.floor() as usize;
-            let y = y.floor() as usize;
+    let performed_move: Vec<u8> = Move {
+        from,
+        to,
+        promotion,
+        forfeit: false,
+        offer_draw: false,
+    }.try_into().unwrap();
 
-            if y as f32 > screen_height() / 2.0 - square_size / 2.0
-            && (y as f32) < screen_height() / 2.0 + square_size / 2.0
-            && (x as f32) > screen_width() / 2.0 - square_size * 2.0 {
+    socket.write_all(&performed_move).unwrap();
 
-                let piece = if (x as f32) < screen_width() / 2.0 - square_size {
+    let mut buf = [0; 128];
+    let amount = socket.read(&mut buf).unwrap();
+
+    let ack = Ack::try_from(&buf[0..amount]).unwrap();
+    ack.ok
+}
+
+fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<usize>, is_promote: &mut bool, socket: &mut TcpStream) {
+    let (x, y) = select(square_size);
+    let index = x + y * 8;
+
+    if let Some(current_index) = current {
+        let current_x = *current_index % 8;
+        let current_y = *current_index / 8;
+
+        *is_promote = {
+            if game.move_piece(*current_index, index).unwrap_or(true) {
+                let from = (current_x as u8, current_y as u8);
+                let to = (x as u8, y as u8);
+                net_move(from, to, None, socket);
+
+                false
+            } else {
+                true
+            }
+        };
+
+        if *is_promote {
+            let (x, y) = select(square_size);
+
+            let top = square_size * 3.5;
+            let bottom = square_size * 4.5;
+            let left = square_size * 2.0;
+            let queen = square_size * 3.0;
+            let bishop = square_size * 4.0;
+            let knight = square_size * 5.0;
+            let rook = square_size * 6.0;
+
+            if y as f32 > top
+            && (y as f32) < bottom
+            && (x as f32) > left {
+
+                let piece = if (x as f32) < queen {
                     if game.whites_turn {
                         Some(PieceType::WhiteQueen)
                     } else {
                         Some(PieceType::BlackQueen)
                     }
-                } else if (x as f32) < screen_width() / 2.0 + square_size {
+                } else if (x as f32) < bishop {
                     if game.whites_turn {
                         Some(PieceType::WhiteBishop)
                     } else {
                         Some(PieceType::BlackBishop)
                     }
-                } else if (x as f32) < screen_width() / 2.0 + square_size * 2.0 {
+                } else if (x as f32) < knight {
                     if game.whites_turn {
                         Some(PieceType::WhiteKnight)
                     } else {
                         Some(PieceType::BlackKnight)
                     }
-                } else if (x as f32) < screen_width() / 2.0 + square_size * 3.0 {
+                } else if (x as f32) < rook {
                     if game.whites_turn {
                         Some(PieceType::WhiteRook)
                     } else {
@@ -147,20 +233,21 @@ fn handle_input(game: &mut ChessBoard, square_size: f32, current_index: &mut usi
                 if let Some(piece) = piece {
                     game.handle_promotion(*current_index, x + y * 8, piece)
                         .unwrap();
-                }
 
-                *is_promote = false;
+                    let from = (current_x as u8, current_y as u8);
+                    let to = (x as u8, y as u8);
+
+                    net_move(from, to, Some(piece), socket);
+
+                    *is_promote = false;
+                }
             }
         }
 
-        usize::MAX
+        *current = None;
     } else {
-        x + y * 8
+        *current = Some(x + y * 8);
     }
-}
-
-fn handle_move(game: &mut ChessBoard, from: usize, to: usize) -> bool {
-    !game.move_piece(from, to).unwrap_or(true)
 }
 
 fn display_pawn_promotion(
@@ -285,4 +372,5 @@ fn display_square(
             highlight_color,
         );
     }
+
 }
