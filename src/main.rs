@@ -16,26 +16,79 @@ struct Square {
 
 #[macroquad::main("Chess")]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+    let mut args = std::env::args();
 
-    let (mut socket, start) = if let Ok((mut socket, _addr)) = listener.accept() {
-        let mut buf = [0; 128];
-        let amount = socket.read(&mut buf).unwrap();
+    clear_background(BLACK);
+    next_frame().await;
 
-        (socket, Start::try_from(&buf[0..amount]).unwrap())
+    let (mut game, local_turn_is_white, mut socket) = if let Some(arg) = args.nth(1) {
+        if arg.eq("-c") {
+            let ip = args.next().unwrap();
+            println!("connecting to {:?}", ip);
+            let mut socket = TcpStream::connect(ip).unwrap();
+
+            println!("connected");
+
+            println!("setting up");
+            let start: Vec<u8> = Start {
+                is_white: true,
+                name: None,
+                fen: None,
+                time: None,
+                inc: None,
+            }.try_into().unwrap();
+
+            socket.write_all(&start).unwrap();
+
+            println!("setup sent");
+
+            let mut buf = [0; 128];
+            let amount = socket.read(&mut buf).unwrap();
+
+            let start_res: Start = buf[0..amount].try_into().unwrap();
+
+            let game = if let Some(fen) = start_res.fen {
+                let mut game = ChessBoard::new();
+                game.load(fen);
+                game
+            } else {
+                ChessBoard::new()
+            };
+
+            (game, !start_res.is_white, socket)
+        } else {
+            panic!("failed to connect");
+        }
     } else {
-        todo!()
+        println!("listening");
+        let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+
+        let (mut socket, start) = if let Ok((mut socket, _addr)) = listener.accept() {
+            println!("connection recived");
+            let mut buf = [0; 128];
+            let amount = socket.read(&mut buf).unwrap();
+
+            (socket, Start::try_from(&buf[0..amount]).unwrap())
+        } else {
+            todo!()
+        };
+
+        println!("setting up");
+
+        let start_res: Vec<u8> = Start {
+            is_white: !start.is_white,
+            name: None,
+            fen: None,
+            time: None,
+            inc: None
+        }.try_into().unwrap();
+
+        socket.write_all(&start_res).unwrap();
+
+        (ChessBoard::new(), !start.is_white, socket)
     };
 
-    let start_res: Vec<u8> = Start {
-        is_white: !start.is_white,
-        name: None,
-        fen: None,
-        time: None,
-        inc: None
-    }.try_into().unwrap();
-
-    socket.write_all(&start_res).unwrap();
+    println!("setup complete");
 
     let ceris = Color::from_hex(0xE83D84);
     let green = Color::from_hex(0x17c27b);
@@ -46,10 +99,6 @@ async fn main() {
     let knight = load_texture("./img/Chess_nlt45.svg.png").await.unwrap();
     let rook = load_texture("./img/Chess_rlt45.svg.png").await.unwrap();
     let pawn = load_texture("./img/Chess_plt45.svg.png").await.unwrap();
-
-    let mut game = ChessBoard::new();
-
-    let local_turn_is_white = !start.is_white;
 
     let mut squares = [Square::default(); 64];
 
@@ -72,8 +121,10 @@ async fn main() {
             screen_width() / 8.0
         };
 
-        if game.whites_turn == local_turn_is_white && is_mouse_button_pressed(MouseButton::Left) {
-            handle_input(&mut game, square_size, &mut current_index, &mut is_promote, &mut socket);
+        if game.whites_turn == local_turn_is_white {
+            if is_mouse_button_pressed(MouseButton::Left) {
+                handle_input(&mut game, square_size, &mut current_index, &mut is_promote, &mut socket);
+            }
         } else {
             let mut buf = [0; 128];
             let amount = socket.read(&mut buf).unwrap();
@@ -82,6 +133,7 @@ async fn main() {
             let from = performed_move.from.0 + performed_move.from.1 * 8;
             let to = performed_move.to.0 + performed_move.to.1 * 8;
 
+            println!("from: {from}, to: {to}");
             game.move_piece(from.into(), to.into()).unwrap();
 
             let ack: Vec<u8> = Ack {
@@ -92,7 +144,11 @@ async fn main() {
             socket.write_all(&ack).unwrap();
         }
 
-        let moves = game.get_moves_list(current_index.unwrap());
+        let moves = if let Some(index) = current_index {
+            game.get_moves_list(index)
+        } else {
+            Vec::new()
+        };
 
         for square in squares {
             display_square(
@@ -160,7 +216,7 @@ fn net_move(from: (u8, u8), to: (u8, u8), promotion: Option<PieceType>, socket: 
 
     socket.write_all(&performed_move).unwrap();
 
-    let mut buf = [0; 128];
+    let mut buf = [0; 1024];
     let amount = socket.read(&mut buf).unwrap();
 
     let ack = Ack::try_from(&buf[0..amount]).unwrap();
@@ -176,10 +232,15 @@ fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<us
         let current_y = *current_index / 8;
 
         *is_promote = {
-            if game.move_piece(*current_index, index).unwrap_or(true) {
+            let mut temp_game = (*game).clone();
+            println!("from: {}, to: {index}", *current_index);
+            if temp_game.move_piece(*current_index, index).unwrap_or(true) {
                 let from = (current_x as u8, current_y as u8);
                 let to = (x as u8, y as u8);
-                net_move(from, to, None, socket);
+                if net_move(from, to, None, socket) {
+                    println!("from: {}, to: {index}", *current_index);
+                    game.move_piece(*current_index, index).unwrap();
+                }
 
                 false
             } else {
@@ -231,14 +292,18 @@ fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<us
                 };
 
                 if let Some(piece) = piece {
-                    game.handle_promotion(*current_index, x + y * 8, piece)
-                        .unwrap();
+                    let mut temp_game = (*game).clone();
+                    if temp_game.handle_promotion(*current_index, x + y * 8, piece).unwrap() {
+                        let from = (current_x as u8, current_y as u8);
+                        let to = (x as u8, y as u8);
 
-                    let from = (current_x as u8, current_y as u8);
-                    let to = (x as u8, y as u8);
+                        if net_move(from, to, Some(piece), socket) {
+                            game.handle_promotion(*current_index, x + y * 8, piece)
+                                .unwrap();
 
-                    net_move(from, to, Some(piece), socket);
-
+                            *is_promote = false;
+                        }
+                    }
                     *is_promote = false;
                 }
             }
