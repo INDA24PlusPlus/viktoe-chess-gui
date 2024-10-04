@@ -23,9 +23,9 @@ async fn main() {
 
     let (mut game, local_turn_is_white, mut socket) = if let Some(arg) = args.nth(1) {
         if arg.eq("-c") {
-            let ip = args.next().unwrap();
+            let ip = args.next().expect("Expected ip and port as second argument");
             println!("connecting to {:?}", ip);
-            let mut socket = TcpStream::connect(ip).unwrap();
+            let mut socket = TcpStream::connect(ip).expect("Expected to connect to server");
 
             println!("connected");
 
@@ -36,16 +36,16 @@ async fn main() {
                 fen: None,
                 time: None,
                 inc: None,
-            }.try_into().unwrap();
+            }.try_into().expect("Expected to be able to serialize start struct");
 
-            socket.write_all(&start).unwrap();
+            socket.write_all(&start).expect("Expected to send start struct");
 
             println!("setup sent");
 
             let mut buf = [0; 128];
-            let amount = socket.read(&mut buf).unwrap();
+            let amount = socket.read(&mut buf).expect("Expected to be able to read start respones");
 
-            let start_res: Start = buf[0..amount].try_into().unwrap();
+            let start_res: Start = buf[0..amount].try_into().expect("Recived wrong struct");
 
             let game = if let Some(fen) = start_res.fen {
                 let mut game = ChessBoard::new();
@@ -61,16 +61,16 @@ async fn main() {
         }
     } else {
         println!("listening");
-        let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+        let listener = TcpListener::bind("127.0.0.1:8080").expect("Expected to be able to bind port");
 
         let (mut socket, start) = if let Ok((mut socket, _addr)) = listener.accept() {
             println!("connection recived");
             let mut buf = [0; 128];
-            let amount = socket.read(&mut buf).unwrap();
+            let amount = socket.read(&mut buf).expect("Expected to be able to read start message");
 
-            (socket, Start::try_from(&buf[0..amount]).unwrap())
+            (socket, Start::try_from(&buf[0..amount]).expect("Recived wrong struct"))
         } else {
-            todo!()
+            panic!("Failed to establish connection");
         };
 
         println!("setting up");
@@ -81,7 +81,7 @@ async fn main() {
             fen: None,
             time: None,
             inc: None
-        }.try_into().unwrap();
+        }.try_into().expect("Expected to be able to serialize start struct");
 
         socket.write_all(&start_res).unwrap();
 
@@ -93,12 +93,12 @@ async fn main() {
     let ceris = Color::from_hex(0xE83D84);
     let green = Color::from_hex(0x17c27b);
 
-    let king = load_texture("./img/Chess_klt45.svg.png").await.unwrap();
-    let queen = load_texture("./img/Chess_qlt45.svg.png").await.unwrap();
-    let bishop = load_texture("./img/Chess_blt45.svg.png").await.unwrap();
-    let knight = load_texture("./img/Chess_nlt45.svg.png").await.unwrap();
-    let rook = load_texture("./img/Chess_rlt45.svg.png").await.unwrap();
-    let pawn = load_texture("./img/Chess_plt45.svg.png").await.unwrap();
+    let king = load_texture("./img/Chess_klt45.svg.png").await.expect("Expected to load texture");
+    let queen = load_texture("./img/Chess_qlt45.svg.png").await.expect("Expected to load texture");
+    let bishop = load_texture("./img/Chess_blt45.svg.png").await.expect("Expected to load texture");
+    let knight = load_texture("./img/Chess_nlt45.svg.png").await.expect("Expected to load texture");
+    let rook = load_texture("./img/Chess_rlt45.svg.png").await.expect("Expected to load texture");
+    let pawn = load_texture("./img/Chess_plt45.svg.png").await.expect("Expected to load texture");
 
     let mut squares = [Square::default(); 64];
 
@@ -108,7 +108,7 @@ async fn main() {
         square.y = index / 8;
     }
 
-    let mut is_promote = false;
+    let mut is_promote = None;
 
     let mut current_index: Option<usize> = None;
 
@@ -127,21 +127,58 @@ async fn main() {
             }
         } else {
             let mut buf = [0; 128];
-            let amount = socket.read(&mut buf).unwrap();
+            let amount = socket.read(&mut buf).expect("Expected to be able to read move");
 
-            let performed_move: Move = buf[0..amount].try_into().unwrap();
+            let performed_move: Move = buf[0..amount].try_into().expect("Recived wrong struct");
+            let promote = performed_move.promotion;
             let from = performed_move.from.0 + performed_move.from.1 * 8;
             let to = performed_move.to.0 + performed_move.to.1 * 8;
 
-            println!("from: {from}, to: {to}");
-            game.move_piece(from.into(), to.into()).unwrap();
+            let mut temp_game = game.clone();
+            if let Some(piece) = promote {
+                let piece = match piece {
+                    PromotionPiece::Queen => if game.whites_turn { PieceType::WhiteQueen } else { PieceType::BlackQueen },
+                    PromotionPiece::Bishop => if game.whites_turn { PieceType::WhiteBishop } else { PieceType::BlackBishop },
+                    PromotionPiece::Knight => if game.whites_turn { PieceType::WhiteKnight } else { PieceType::BlackKnight },
+                    PromotionPiece::Rook => if game.whites_turn { PieceType::WhiteRook } else { PieceType::BlackRook },
+                };
 
-            let ack: Vec<u8> = Ack {
-                ok: true,
-                end_state: None
-            }.try_into().unwrap();
+                if temp_game.handle_promotion(from.into(), to.into(), piece).is_ok() {
+                    game.handle_promotion(from.into(), to.into(), piece).expect("Expected to be able to performe same move");
 
-            socket.write_all(&ack).unwrap();
+                    let ack: Vec<u8> = Ack {
+                        ok: true,
+                        end_state: None
+                    }.try_into().expect("Expected to be able to serialize struct");
+
+                    socket.write_all(&ack).expect("Expected to be able to send ack");
+                } else {
+                    let ack: Vec<u8> = Ack {
+                        ok: false,
+                        end_state: None
+                    }.try_into().expect("Expected to be able to serialize struct");
+
+                    socket.write_all(&ack).expect("Expected to be able to send ack");
+                }
+            } else {
+                if temp_game.move_piece(from.into(), to.into()).is_ok() {
+                    game.move_piece(from.into(), to.into()).expect("Expected to be able to performe same move");
+
+                    let ack: Vec<u8> = Ack {
+                        ok: true,
+                        end_state: None
+                    }.try_into().expect("Expected to be able to serialize struct");
+
+                    socket.write_all(&ack).expect("Expected to be able to send ack");
+                } else {
+                    let ack: Vec<u8> = Ack {
+                        ok: false,
+                        end_state: None
+                    }.try_into().expect("Expected to be able to serialize struct");
+
+                    socket.write_all(&ack).expect("Expected to be able to send ack");
+                }
+            }
         }
 
         let moves = if let Some(index) = current_index {
@@ -167,7 +204,7 @@ async fn main() {
             );
         }
 
-        if is_promote {
+        if is_promote.is_some() {
             let color = if game.whites_turn { ceris } else { green };
             display_pawn_promotion(square_size, color, &queen, &bishop, &knight, &rook);
         }
@@ -183,12 +220,15 @@ async fn main() {
         BLACK,
     );
     next_frame().await;
+    loop {}
 }
 
 fn select(square_size: f32) -> (usize, usize) {
     let (x, y) = mouse_position();
     let x = (x / square_size).floor() as usize;
     let y = (y / square_size).floor() as usize;
+
+    println!("{x}, {y}");
 
     (x, y)
 }
@@ -206,24 +246,26 @@ fn net_move(from: (u8, u8), to: (u8, u8), promotion: Option<PieceType>, socket: 
         None
     };
 
+    println!("Netmove: {promotion:?}");
+
     let performed_move: Vec<u8> = Move {
         from,
         to,
         promotion,
         forfeit: false,
         offer_draw: false,
-    }.try_into().unwrap();
+    }.try_into().expect("Expected to be able to serialize struct");
 
-    socket.write_all(&performed_move).unwrap();
+    socket.write_all(&performed_move).expect("Expected to be able to send move");
 
     let mut buf = [0; 1024];
-    let amount = socket.read(&mut buf).unwrap();
+    let amount = socket.read(&mut buf).expect("Expected to be able to recive ack");
 
-    let ack = Ack::try_from(&buf[0..amount]).unwrap();
+    let ack = Ack::try_from(&buf[0..amount]).expect("Recived wrong struct");
     ack.ok
 }
 
-fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<usize>, is_promote: &mut bool, socket: &mut TcpStream) {
+fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<usize>, is_promote: &mut Option<(u8, u8)>, socket: &mut TcpStream) {
     let (x, y) = select(square_size);
     let index = x + y * 8;
 
@@ -231,33 +273,17 @@ fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<us
         let current_x = *current_index % 8;
         let current_y = *current_index / 8;
 
-        *is_promote = {
-            let mut temp_game = (*game).clone();
-            println!("from: {}, to: {index}", *current_index);
-            if temp_game.move_piece(*current_index, index).unwrap_or(true) {
-                let from = (current_x as u8, current_y as u8);
-                let to = (x as u8, y as u8);
-                if net_move(from, to, None, socket) {
-                    println!("from: {}, to: {index}", *current_index);
-                    game.move_piece(*current_index, index).unwrap();
-                }
-
-                false
-            } else {
-                true
-            }
-        };
-
-        if *is_promote {
+        if let Some(promote) = is_promote {
             let (x, y) = select(square_size);
+            println!("promote: {x}, {y}");
 
-            let top = square_size * 3.5;
-            let bottom = square_size * 4.5;
-            let left = square_size * 2.0;
-            let queen = square_size * 3.0;
-            let bishop = square_size * 4.0;
-            let knight = square_size * 5.0;
-            let rook = square_size * 6.0;
+            let top = 3.5;
+            let bottom = 4.5;
+            let left = 2.0;
+            let queen = 3.0;
+            let bishop = 4.0;
+            let knight = 5.0;
+            let rook = 6.0;
 
             if y as f32 > top
             && (y as f32) < bottom
@@ -293,23 +319,42 @@ fn handle_input(game: &mut ChessBoard, square_size: f32, current: &mut Option<us
 
                 if let Some(piece) = piece {
                     let mut temp_game = (*game).clone();
-                    if temp_game.handle_promotion(*current_index, x + y * 8, piece).unwrap() {
+                    println!("{:?}", piece);
+                    if temp_game.handle_promotion(*current_index, (promote.0 + promote.1 * 8).into(), piece).unwrap() {
                         let from = (current_x as u8, current_y as u8);
-                        let to = (x as u8, y as u8);
+                        let to = *promote;
 
                         if net_move(from, to, Some(piece), socket) {
-                            game.handle_promotion(*current_index, x + y * 8, piece)
+                            game.handle_promotion(*current_index, (promote.0 + promote.1 * 8).into(), piece)
                                 .unwrap();
 
-                            *is_promote = false;
+                            *is_promote = None;
+                            *current = None;
                         }
                     }
-                    *is_promote = false;
+                    *is_promote = None;
+                    *current = None;
                 }
             }
-        }
-
-        *current = None;
+        } else {
+            let mut temp_game = (*game).clone();
+            match temp_game.move_piece(*current_index, index) {
+                Ok(true) => {
+                    let from = (current_x as u8, current_y as u8);
+                    let to = (x as u8, y as u8);
+                    if net_move(from, to, None, socket) {
+                        game.move_piece(*current_index, index).unwrap();
+                    }
+                    *is_promote = None;
+                    *current = None;
+                },
+                Ok(false) => *is_promote = Some((x.try_into().unwrap(), y.try_into().unwrap())),
+                Err(_) => {
+                    *current = None;
+                    return
+                }
+            }
+        } 
     } else {
         *current = Some(x + y * 8);
     }
